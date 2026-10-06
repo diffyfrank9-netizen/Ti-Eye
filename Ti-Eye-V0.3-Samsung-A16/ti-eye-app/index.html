@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Ti-Eye — AI Football Camera</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-512.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090E1A">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+<style>
+:root{
+  --bg:#090E1A;--panel:#121B2C;--panel2:#182438;--line:#24324A;--text:#ECEFF4;--muted:#94A3B8;
+  --accent:#0FB876;--accent2:#22D98C;--danger:#DE5A4C;--warn:#F2B754;--radius:14px;
+  --safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px)
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
+button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
+#app{max-width:540px;margin:0 auto;min-height:100vh;position:relative}
+.screen{display:none;min-height:100vh;flex-direction:column}.screen.active{display:flex}
+.pad{padding:18px 16px calc(34px + var(--safe-bottom));display:flex;flex-direction:column;gap:15px;flex:1}
+.brand{display:flex;align-items:center;gap:10px}.brand img{width:38px;height:38px;border-radius:9px}.brand-text{font-weight:900;font-size:22px;letter-spacing:.4px}.brand-sub{font-size:10px;color:var(--muted);letter-spacing:1.4px;text-transform:uppercase}
+.top-nav{display:flex;align-items:center;gap:10px}.back-btn,.icon-btn{background:var(--panel);border:1px solid var(--line);color:var(--text);width:40px;height:40px;border-radius:10px}.top-nav-title{font-weight:900;font-size:19px}
+.cta{border:0;border-radius:var(--radius);background:linear-gradient(155deg,var(--accent2),var(--accent));color:#06130d;font-weight:900;font-size:17px;padding:17px;box-shadow:0 10px 26px rgba(0,0,0,.3)}
+.section-label{font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);margin-top:4px}.empty{padding:34px 18px;border:1px dashed var(--line);border-radius:var(--radius);text-align:center;color:var(--muted);font-size:14px}
+.match-list{display:flex;flex-direction:column;gap:9px}.match-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 15px;display:flex;justify-content:space-between;align-items:center;gap:10px}.match-card-info{min-width:0}.match-card-opp{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.match-card-meta{font-size:12px;color:var(--muted);margin-top:4px}.match-card-count{font-family:monospace;color:var(--accent2);background:rgba(34,217,140,.1);padding:5px 9px;border-radius:20px}
+.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}.field input,.field select{background:var(--panel);border:1px solid var(--line);color:var(--text);padding:13px;border-radius:10px;outline:none}.hint{color:var(--muted);font-size:13px;line-height:1.5}.btn-row{display:flex;gap:9px}.btn-secondary,.btn-primary{border-radius:10px;padding:14px;font-weight:800;border:1px solid var(--line)}.btn-secondary{flex:1;background:transparent;color:var(--muted)}.btn-primary{flex:2;background:linear-gradient(155deg,var(--accent2),var(--accent));color:#06130d;border:0}
+.setup-preview{height:52vh;min-height:300px;max-height:600px;background:#000;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;position:relative}.setup-preview video{width:100%;height:100%;object-fit:cover}.setup-badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.55);padding:7px 10px;border-radius:20px;font-size:11px}
+.setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.setting{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px}.setting label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}.setting strong{font-size:14px}.range-row{display:flex;align-items:center;gap:10px}.range-row input{width:100%}.range-value{font:700 12px monospace;color:var(--accent2);min-width:36px;text-align:right}
+#screen-active{background:#000}#screen-active .pad{display:contents}.stage{position:fixed;inset:0;background:#000;z-index:1}.stage video{display:none}.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:contain}#ball-canvas{z-index:2;pointer-events:none}
+.overlay-top,.overlay-bottom{position:fixed;left:0;right:0;z-index:5;pointer-events:none}.overlay-top{top:0;padding:calc(11px + var(--safe-top)) 12px 48px;background:linear-gradient(180deg,rgba(0,0,0,.72),transparent);display:flex;align-items:flex-start;justify-content:space-between}.overlay-bottom{bottom:0;padding:12px 12px calc(12px + var(--safe-bottom));background:linear-gradient(0deg,rgba(0,0,0,.9) 20%,rgba(0,0,0,.55) 65%,transparent);display:flex;flex-direction:column;gap:8px}
+.overlay-btn,.ball-toggle{pointer-events:auto;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.46);color:var(--text);border-radius:20px;padding:8px 11px;font-size:11px;font-weight:800;backdrop-filter:blur(5px)}.ball-toggle.on{color:var(--accent2);border-color:rgba(34,217,140,.75);background:rgba(15,184,118,.16)}
+.overlay-clock{text-align:center}.overlay-opp{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}.score{font:800 15px monospace;margin-top:2px}.clock{font:900 28px monospace;line-height:1.05;color:var(--accent2);text-shadow:0 0 14px rgba(34,217,140,.4)}.half{font-size:10px;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted);margin-top:2px}.rec{display:flex;align-items:center;gap:5px;background:rgba(0,0,0,.45);padding:6px 9px;border-radius:20px;font-size:10px}.dot{width:8px;height:8px;border-radius:50%;background:var(--danger)}.dot.live{animation:pulse 1.2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.tracking-status{pointer-events:none;align-self:center;text-align:center;min-height:18px;font-size:11px;color:var(--muted)}.tag-grid{pointer-events:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.tag-btn{border:1px solid rgba(255,255,255,.16);background:rgba(17,49,34,.68);color:var(--text);border-radius:11px;padding:8px 3px;min-height:54px;font-size:10px;font-weight:800}.tag-btn .ic{display:block;font-size:17px;margin-bottom:2px}.tag-btn:active{transform:scale(.95)}
+.segment-controls{pointer-events:auto;display:flex;gap:8px}.seg-btn{flex:1;border:0;border-radius:10px;padding:12px;font-weight:900}.seg-end{background:var(--danger);color:#fff}.seg-begin{background:linear-gradient(155deg,var(--accent2),var(--accent));color:#06130d}.seg-finish{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+.telemetry{pointer-events:auto;display:flex;gap:6px;justify-content:center;flex-wrap:wrap}.chip{background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:5px 8px;font:700 10px monospace;color:var(--muted)}.chip.good{color:var(--accent2)}.chip.warn{color:var(--warn)}
+.scoreboard{background:linear-gradient(180deg,var(--panel),#0d1420);border:1px solid var(--line);border-radius:var(--radius);padding:18px;text-align:center}.scoreboard-opp{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px}.scoreboard-score{font:900 33px monospace;margin:7px 0}.summary-actions{display:flex;gap:8px}.timeline{display:flex;flex-direction:column;gap:8px}.tag-row{display:grid;grid-template-columns:72px 1fr;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}.tag-time{font:700 11px monospace;color:var(--accent2)}.tag-type{font-weight:800}.tag-note{color:var(--muted);font-size:12px;margin-top:3px}.segment-list{display:flex;flex-direction:column;gap:8px}.segment-card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:10px}.segment-meta{font-size:11px;color:var(--muted);margin-top:3px}.save-btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:9px;padding:9px;font-size:11px;font-weight:800}
+.device-badge{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(34,217,140,.08);border:1px solid rgba(34,217,140,.24);border-radius:11px;padding:10px 12px;font-size:12px}.device-badge strong{color:var(--accent2)}.device-badge span{color:var(--muted)}.perf-note{font-size:11px;color:var(--muted);line-height:1.45}.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);background:#0b1321;border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:10px;font-size:13px;z-index:100;opacity:0;transition:.2s;pointer-events:none;white-space:nowrap}.toast.show{opacity:1;transform:translate(-50%,0)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:flex-end;z-index:30;padding:12px}.modal.show{display:flex}.sheet{width:100%;max-width:540px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}.sheet h3{margin:0 0 12px}.sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sheet button{min-height:45px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-weight:800}.sheet .wide{grid-column:1/-1}
+@media(min-width:700px){#app{box-shadow:0 0 0 1px #111827,0 0 60px rgba(0,0,0,.25)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <section class="screen active" id="screen-home">
+    <div class="pad">
+      <div class="brand"><img src="icon-192.png" alt="Ti-Eye"><div><div class="brand-text">TI-EYE</div><div class="brand-sub">AI football camera prototype</div></div></div>
+      <button class="cta" id="btn-new-match">＋ New Match</button>
+      <button class="btn-secondary" id="btn-install" style="display:none">📲 Install Ti-Eye on this phone</button>
+      <div class="section-label">Match history</div><div class="match-list" id="match-list"></div>
+      <div class="hint">V0.2 focus: use the phone camera to detect the ball, estimate its movement and create a digitally tracked camera view. Physical pan/tilt hardware can be added later.</div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-new">
+    <div class="pad">
+      <div class="top-nav"><button class="back-btn" data-nav="home">←</button><div class="top-nav-title">New Match</div></div>
+      <div class="field"><label>Opponent</label><input id="input-opponent" type="text" placeholder="e.g. Bandari FC Youth" autocomplete="off"></div>
+      <div class="field"><label>Venue</label><input id="input-venue" type="text" placeholder="e.g. Mombasa Municipal Stadium" autocomplete="off"></div>
+      <div class="hint">Mount the phone in landscape with the full pitch visible. Start with a fixed phone position; Ti-Eye will test digital ball-following first.</div>
+      <div class="btn-row"><button class="btn-secondary" data-nav="home">Cancel</button><button class="btn-primary" id="btn-create-match">Next: Camera Setup</button></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-setup">
+    <div class="pad">
+      <div class="top-nav"><button class="back-btn" data-nav="home">←</button><div class="top-nav-title">Camera Setup</div></div>
+      <div class="setup-preview"><video id="setup-video" autoplay playsinline muted></video><div class="setup-badge" id="setup-camera-badge">Camera starting…</div></div>
+      <div class="device-badge"><strong id="device-profile">Phone camera profile</strong><span id="device-profile-detail">Preparing…</span></div>
+      <div class="setup-grid">
+        <div class="setting"><label>Record view</label><select id="view-mode"><option value="auto">AI Follow</option><option value="full">Full Pitch</option></select></div>
+        <div class="setting"><label>Tracking zoom</label><div class="range-row"><input id="zoom-range" type="range" min="1" max="1.35" step="0.05" value="1.15"><span class="range-value" id="zoom-value">1.15×</span></div></div>
+      </div>
+      <div class="perf-note" id="performance-note">A16 mode uses 1080p capture with a smaller AI analysis frame to reduce heat and battery use while keeping the recording stream separate.</div>
+      <div class="hint">AI Follow records a virtual camera crop that moves with the ball. If the ball is lost, the crop holds briefly and then relaxes toward the full-pitch view.</div>
+      <button class="btn-primary" id="btn-begin-half1">▶ Begin Half 1</button>
+      <button class="btn-secondary" id="btn-retry-camera">↻ Reconnect Camera</button>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-active">
+    <div class="stage"><video id="active-video" autoplay playsinline muted></video><canvas id="view-canvas"></canvas><canvas id="ball-canvas"></canvas></div>
+    <div class="overlay-top">
+      <button class="overlay-btn" id="btn-active-back">← Exit</button>
+      <div class="overlay-clock"><div class="overlay-opp" id="active-opp">vs —</div><div class="score" id="active-score">0 – 0</div><div class="clock" id="clock-display">00:00</div><div class="half" id="active-half">HALF 1</div></div>
+      <div class="rec"><span class="dot" id="rec-dot"></span><span id="rec-label">Recording</span></div>
+    </div>
+    <div class="overlay-bottom">
+      <div class="tracking-status" id="tracking-status">AI ready</div>
+      <div class="telemetry"><span class="chip" id="chip-ai">AI OFF</span><span class="chip" id="chip-track">LOCK —</span><span class="chip" id="chip-conf">CONF —</span><span class="chip" id="chip-dir">DIR —</span><span class="chip" id="chip-hw">PHONE STAND</span><span class="chip" id="chip-net">NET —</span></div>
+      <div class="tag-grid" id="tag-grid">
+        <button class="tag-btn" data-type="Goal"><span class="ic">⚽</span>Our Goal</button><button class="tag-btn" data-type="OppGoal"><span class="ic">🥅</span>Opp Goal</button><button class="tag-btn" data-type="Chance"><span class="ic">🎯</span>Chance</button><button class="tag-btn" data-type="Card"><span class="ic">🟨</span>Card</button><button class="tag-btn" data-type="Sub"><span class="ic">🔁</span>Sub</button><button class="tag-btn" data-type="Foul"><span class="ic">⚠️</span>Foul</button><button class="tag-btn" data-type="Highlight"><span class="ic">✨</span>Highlight</button><button class="tag-btn" id="btn-control-sheet"><span class="ic">⚙️</span>Controls</button>
+      </div>
+      <div class="segment-controls" id="segment-controls"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-summary">
+    <div class="pad">
+      <div class="top-nav"><button class="back-btn" data-nav="home">←</button><div class="top-nav-title">Match Summary</div></div>
+      <div class="scoreboard"><div class="scoreboard-opp" id="summary-opp">vs —</div><div class="scoreboard-score" id="summary-score">0 – 0</div><div class="hint" id="summary-meta">—</div></div>
+      <div class="section-label">Video segments</div><div class="segment-list" id="segment-list"></div>
+      <div class="hint">Each completed half is prepared as a video download. Match data is stored locally on the phone. Video recording uses the browser's MediaRecorder and may be saved as WebM depending on Samsung browser support.</div>
+      <div class="section-label">Tagged moments</div><div class="timeline" id="summary-timeline"></div><div class="empty" id="summary-empty">No moments were tagged.</div>
+      <div class="summary-actions"><button class="btn-secondary" id="btn-copy">📋 Copy Edit List</button><button class="btn-secondary" id="btn-delete-match" style="color:var(--danger)">Delete</button></div>
+    </div>
+  </section>
+</div>
+
+<div class="modal" id="control-modal">
+  <div class="sheet">
+    <h3>Ti-Eye Tracking Controls</h3>
+    <div class="sheet-grid">
+      <button id="btn-ai-toggle">🔎 AI Tracking: Off</button><button id="btn-follow-toggle">🎥 Auto Frame: On</button>
+      <button id="btn-pan-left">◀ Pan Left</button><button id="btn-pan-right">Pan Right ▶</button>
+      <button id="btn-tilt-up">▲ Tilt Up</button><button id="btn-tilt-down">▼ Tilt Down</button>
+      <button class="wide" id="btn-recenter">◎ Recenter Digital View</button>
+      <button class="wide" id="btn-close-sheet">Close</button>
+    </div>
+    <div class="hint" style="margin-top:10px">The four directional controls currently move the virtual camera. They are intentionally shaped like future ESP32 pan/tilt commands so the hardware layer can be added without redesigning the app.</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const STORAGE_KEY = 'ti-eye-matches-v3';
+  const DB_NAME = 'ti-eye-db-v1';
+  const DB_STORE = 'kv';
+  const MODEL_URL_NOTE = 'COCO-SSD sports-ball detector; prototype only';
+
+  const $ = id => document.getElementById(id);
+  const screens = { home:$('screen-home'), new:$('screen-new'), setup:$('screen-setup'), active:$('screen-active'), summary:$('screen-summary') };
+
+  let matches = [];
+  let currentMatchId = null;
+  let mediaStream = null;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let facingMode = 'environment';
+  let clockInterval = null;
+  let ballModel = null;
+  let aiEnabled = false;
+  let autoFrame = true;
+  let detectBusy = false;
+  let lastDetectMs = 0;
+  let ballLoopRaf = null;
+  let renderRaf = null;
+  let lastFrameMs = 0;
+  let lastBall = null;
+  let candidateBall = null;
+  let predictedBall = null;
+  let lostSince = 0;
+  let manualOffset = { x:0, y:0 };
+  let zoom = 1.20;
+  let viewMode = 'auto';
+  let detectionFps = 0;
+  let detectionCount = 0;
+  let detectionFpsStamp = performance.now();
+  let segmentBlob = null;
+  let segmentUrl = null;
+  let segmentFilename = '';
+  const segmentBlobs = {}; // matchId -> segment index -> {blob,url,filename}
+  let lastRecordedTrack = 'full';
+  let deferredInstallPrompt = null;
+  let ballLoopTimer = null;
+  let wakeLock = null;
+  let analysisCanvas = document.createElement('canvas');
+  const deviceProfile = detectDeviceProfile();
+
+  function detectDeviceProfile(){
+    const ua = navigator.userAgent || '';
+    const isA16 = /SM-A16(?:5|6)/i.test(ua) || /Galaxy A16/i.test(ua);
+    const cores = navigator.hardwareConcurrency || 4;
+    const memory = navigator.deviceMemory || 4;
+    if(isA16) return {name:'Samsung A16 · Balanced', detail:`1080p30 capture · ${memory}GB class · ${cores} CPU threads`, analysisW:640, analysisH:360, detectInterval:190, score:0.22, maxPredictions:12, bitrate:6000000, outputW:1280, outputH:720, zoom:1.15};
+    if(cores<=4 || memory<=4) return {name:'Balanced phone mode', detail:`${memory}GB class · ${cores} CPU threads`, analysisW:512, analysisH:288, detectInterval:220, score:0.24, maxPredictions:10, bitrate:5500000, outputW:1280, outputH:720, zoom:1.12};
+    return {name:'Standard phone mode', detail:`${memory}GB class · ${cores} CPU threads`, analysisW:640, analysisH:360, detectInterval:170, score:0.22, maxPredictions:12, bitrate:7000000, outputW:1920, outputH:1080, zoom:1.18};
+  }
+
+  function toast(msg){ const el=$('toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.classList.remove('show'),2500); }
+  function showScreen(name){ Object.values(screens).forEach(s=>s.classList.remove('active')); screens[name].classList.add('active'); }
+  function esc(s){ const d=document.createElement('div'); d.textContent=s ?? ''; return d.innerHTML; }
+  function fmtClock(sec){ sec=Math.max(0,Math.floor(sec||0)); return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; }
+  function fmtDate(iso){ return new Date(iso).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
+  function getMatch(id=currentMatchId){ return matches.find(m=>m.id===id); }
+
+  // ---------- Reliable local metadata storage ----------
+  function openDb(){
+    return new Promise((resolve,reject)=>{
+      if(!('indexedDB' in window)){ reject(new Error('IndexedDB unavailable')); return; }
+      const req=indexedDB.open(DB_NAME,1);
+      req.onupgradeneeded=()=>{ if(!req.result.objectStoreNames.contains(DB_STORE)) req.result.createObjectStore(DB_STORE); };
+      req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error || new Error('DB error'));
+    });
+  }
+  async function dbGet(key){ const db=await openDb(); return new Promise((resolve,reject)=>{ const tx=db.transaction(DB_STORE,'readonly'); const r=tx.objectStore(DB_STORE).get(key); r.onsuccess=()=>resolve(r.result); r.onerror=()=>reject(r.error); }); }
+  async function dbSet(key,value){ const db=await openDb(); return new Promise((resolve,reject)=>{ const tx=db.transaction(DB_STORE,'readwrite'); tx.objectStore(DB_STORE).put(value,key); tx.oncomplete=()=>resolve(); tx.onerror=()=>reject(tx.error); }); }
+  async function loadMatches(){
+    try{ const val=await dbGet(STORAGE_KEY); matches=Array.isArray(val)?val:[]; }
+    catch(e){ try{ matches=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch{ matches=[]; } }
+    renderHome();
+  }
+  async function saveMatches(){
+    try{ await dbSet(STORAGE_KEY,matches); return; }
+    catch(e){ try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(matches)); return; }catch{} }
+    toast('Could not save match data on this device');
+  }
+
+  // ---------- Home / match setup ----------
+  function renderHome(){
+    const list=$('match-list'); list.innerHTML='';
+    if(!matches.length){ list.innerHTML='<div class="empty">No matches yet. Start a new match to begin.</div>'; return; }
+    matches.slice().reverse().forEach(m=>{
+      const card=document.createElement('div'); card.className='match-card';
+      card.innerHTML=`<div class="match-card-info"><div class="match-card-opp">vs ${esc(m.opponent||'Unnamed opponent')}</div><div class="match-card-meta">${fmtDate(m.createdAt)}${m.venue?' · '+esc(m.venue):''}</div></div><div class="match-card-count">${m.tags?.length||0}</div>`;
+      card.addEventListener('click',()=>openMatch(m.id)); list.appendChild(card);
+    });
+  }
+  function openMatch(id){ const m=getMatch(id); if(!m) return; currentMatchId=id; renderSummary(m); showScreen('summary'); }
+  document.querySelectorAll('[data-nav="home"]').forEach(b=>b.addEventListener('click',async()=>{ await safeStopCamera(); stopTicker(); showScreen('home'); renderHome(); }));
+  $('btn-install').addEventListener('click',async()=>{ if(!deferredInstallPrompt){toast('Use the browser menu and choose Add to Home screen');return;} deferredInstallPrompt.prompt(); try{await deferredInstallPrompt.userChoice}catch{} deferredInstallPrompt=null;$('btn-install').style.display='none'; });
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;$('btn-install').style.display='block';});
+  window.addEventListener('appinstalled',()=>{deferredInstallPrompt=null;$('btn-install').style.display='none';toast('Ti-Eye installed on this phone');});
+  $('btn-new-match').addEventListener('click',()=>{ $('input-opponent').value='';$('input-venue').value='';showScreen('new');setTimeout(()=>$('input-opponent').focus(),60); });
+  $('btn-create-match').addEventListener('click',async()=>{
+    const opponent=$('input-opponent').value.trim(), venue=$('input-venue').value.trim();
+    if(!opponent){toast('Enter an opponent name');return;}
+    const m={id:'m_'+Date.now(),opponent,venue,createdAt:new Date().toISOString(),status:'setup',segments:[],tags:[],currentSegment:0,segmentStartedAtMs:null,segmentElapsedSeconds:0,score:{us:0,opp:0},tracking:{detections:0,locks:0,lost:0,viewMode:'auto',zoom:zoom,profile:deviceProfile.name}};
+    matches.push(m);currentMatchId=m.id;await saveMatches();showScreen('setup');await startCameraSetup();
+  });
+
+  // ---------- Camera ----------
+  function configureDeviceProfile(){
+    analysisCanvas.width=deviceProfile.analysisW;
+    analysisCanvas.height=deviceProfile.analysisH;
+    $('device-profile').textContent=deviceProfile.name;
+    $('device-profile-detail').textContent=deviceProfile.detail;
+    $('performance-note').textContent=`${deviceProfile.name}: capture is targeted at 1920×1080/30fps. AI runs on a ${deviceProfile.analysisW}×${deviceProfile.analysisH} analysis frame to keep the A16 responsive during recording.`;
+    $('zoom-range').value=deviceProfile.zoom; zoom=deviceProfile.zoom; $('zoom-value').textContent=zoom.toFixed(2)+'×';
+  }
+  async function acquireStream(){
+    if(mediaStream) mediaStream.getTracks().forEach(t=>t.stop());
+    const videoConstraints={facingMode:{exact:'environment'},width:{ideal:1920,max:1920},height:{ideal:1080,max:1080},frameRate:{ideal:30,max:30},resizeMode:'none'};
+    try{ mediaStream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}); }
+    catch(e){
+      try{ mediaStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30,max:30}},audio:true}); }
+      catch(e2){
+        try{ mediaStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}},audio:false}); toast('Camera connected at 720p without microphone'); }
+        catch(e3){ throw e3; }
+      }
+    }
+    const v=mediaStream.getVideoTracks()[0];
+    const s=v?.getSettings?.()||{};
+    $('setup-camera-badge').textContent=`${s.width||'?'}×${s.height||'?'} · ${s.frameRate?Math.round(s.frameRate):'?'}fps · Rear camera`;
+  }
+  async function startCameraSetup(){
+    configureDeviceProfile();
+    if(!navigator.mediaDevices?.getUserMedia){ showCameraError({name:'NotSupportedError'}); return; }
+    try{ $('setup-camera-badge').textContent='Starting rear camera…'; await acquireStream(); $('setup-video').srcObject=mediaStream; await $('setup-video').play().catch(()=>{}); }
+    catch(err){ showCameraError(err); }
+  }
+  function showCameraError(err){
+    let msg='Camera access failed.';
+    if(err?.name==='NotAllowedError') msg='Camera/microphone permission was denied. Allow both permissions for Ti-Eye.';
+    else if(err?.name==='NotFoundError') msg='No usable rear camera was found on this phone.';
+    else if(err?.name==='NotSupportedError') msg='This browser does not support camera access. Use Chrome or Samsung Internet over HTTPS.';
+    else if(location.protocol!=='https:'&&location.hostname!=='localhost') msg='Camera access needs HTTPS. Install/open Ti-Eye from a secure web address.';
+    else msg += ' Close other camera apps and try again.';
+    $('setup-camera-badge').textContent=msg; toast(msg);
+  }
+  $('btn-retry-camera').addEventListener('click',startCameraSetup);
+  $('zoom-range').addEventListener('input',e=>{ zoom=Number(e.target.value); $('zoom-value').textContent=zoom.toFixed(2)+'×'; });
+  $('view-mode').addEventListener('change',e=>{ viewMode=e.target.value; });
+
+  async function requestWakeLock(){
+    try{ if('wakeLock' in navigator){ wakeLock=await navigator.wakeLock.request('screen'); wakeLock.addEventListener?.('release',()=>{wakeLock=null}); } }catch{}
+  }
+  async function releaseWakeLock(){ try{ await wakeLock?.release?.(); }catch{} wakeLock=null; }
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && getMatch()?.status==='running') requestWakeLock(); });
+
+  // ---------- Recording ----------
+  function pickMimeType(){
+    const list=['video/mp4;codecs=h264,aac','video/mp4','video/webm;codecs=vp8,opus','video/webm'];
+    for(const t of list) if(window.MediaRecorder?.isTypeSupported?.(t)) return t;
+    return '';
+  }
+  function resizeRecordCanvas(){
+    const c=$('view-canvas');
+    const w=deviceProfile.outputW,h=deviceProfile.outputH;
+    if(c.width!==w||c.height!==h){c.width=w;c.height=h}
+  }
+  function createRecordingStream(){
+    const useAuto=lastRecordedTrack==='auto';
+    if(useAuto){
+      resizeRecordCanvas();
+      const canvasTrack=$('view-canvas').captureStream(30).getVideoTracks()[0];
+      const tracks=[canvasTrack,...(mediaStream?.getAudioTracks?.()||[])];
+      return new MediaStream(tracks);
+    }
+    return mediaStream;
+  }
+  async function beginSegment(m){
+    recordedChunks=[];segmentBlob=null;segmentUrl=null;
+    lastRecordedTrack=(viewMode==='auto'&&autoFrame)?'auto':'full';
+    const stream=createRecordingStream(); if(!stream) throw new Error('No recording stream');
+    const mime=pickMimeType();
+    const opts={}; if(mime) opts.mimeType=mime; opts.videoBitsPerSecond=deviceProfile.bitrate;
+    try{mediaRecorder=new MediaRecorder(stream,opts);}catch(e){mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);}
+    mediaRecorder.ondataavailable=e=>{if(e.data?.size)recordedChunks.push(e.data)};
+    mediaRecorder.start(1000);
+    m.segmentStartedAtMs=Date.now();m.segmentElapsedSeconds=0;m.tracking.viewMode=lastRecordedTrack;m.tracking.zoom=zoom;m.tracking.profile=deviceProfile.name;await saveMatches();startTicker();await requestWakeLock();
+  }
+  async function endSegment(m){
+    if(!mediaRecorder||mediaRecorder.state==='inactive')return null;
+    return new Promise(resolve=>{
+      mediaRecorder.onstop=async()=>{
+        const mime=mediaRecorder.mimeType||'video/webm';segmentBlob=new Blob(recordedChunks,{type:mime});segmentUrl=URL.createObjectURL(segmentBlob);
+        const ext=mime.includes('mp4')?'mp4':'webm';segmentFilename=`Ti-Eye-${(m.opponent||'match').replace(/[^a-z0-9]+/gi,'-')}-H${m.currentSegment}-${m.createdAt.slice(0,10)}.${ext}`;
+        segmentBlobs[m.id]=segmentBlobs[m.id]||{};segmentBlobs[m.id][m.currentSegment]={blob:segmentBlob,url:segmentUrl,filename:segmentFilename};
+        const seconds=currentSegmentElapsed(m);m.segments.push({index:m.currentSegment,seconds,filename:segmentFilename,view:lastRecordedTrack,profile:deviceProfile.name});m.segmentElapsedSeconds=seconds;m.segmentStartedAtMs=null;stopTicker();await saveMatches();
+        triggerDownload(segmentUrl,segmentFilename);resolve({blob:segmentBlob,url:segmentUrl,filename:segmentFilename});
+      };
+      mediaRecorder.stop();
+    });
+  }
+  function triggerDownload(url,filename){ const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove(); }
+  async function safeStopCamera(){
+    if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop()}catch{}}
+    if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
+    await releaseWakeLock();try{await document.exitFullscreen?.()}catch{};try{screen.orientation?.unlock?.()}catch{};
+    cancelAnimationFrame(renderRaf);renderRaf=null;cancelAnimationFrame(ballLoopRaf);ballLoopRaf=null;clearTimeout(ballLoopTimer);ballLoopTimer=null;aiEnabled=false;stopTicker();
+  }
+
+  // ---------- Clock ----------
+  function currentSegmentElapsed(m){let s=m.segmentElapsedSeconds||0;if(m.status==='running'&&m.segmentStartedAtMs)s+=(Date.now()-m.segmentStartedAtMs)/1000;return s}
+  function totalElapsed(m){return (m.segments||[]).reduce((a,s)=>a+(s.seconds||0),0)+(m.status==='running'?currentSegmentElapsed(m):0)}
+  function startTicker(){stopTicker();clockInterval=setInterval(()=>{const m=getMatch();if(m)$('clock-display').textContent=fmtClock(currentSegmentElapsed(m))},500)}
+  function stopTicker(){if(clockInterval){clearInterval(clockInterval);clockInterval=null}}
+
+  // ---------- Digital camera tracking engine ----------
+  function resizeCanvases(){
+    const v=$('active-video'), vc=$('view-canvas'), bc=$('ball-canvas');
+    const w=v.videoWidth||1920,h=v.videoHeight||1080;
+    resizeRecordCanvas();
+    if(bc.width!==window.innerWidth||bc.height!==window.innerHeight){bc.width=window.innerWidth;bc.height=window.innerHeight}
+    return {w,h};
+  }
+  function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+  function pickBall(predictions){
+    const sx=($('active-video').videoWidth||1920)/analysisCanvas.width, sy=($('active-video').videoHeight||1080)/analysisCanvas.height;
+    const candidates=predictions.filter(p=>p.class==='sports ball'&&p.score>=deviceProfile.score&&p.bbox?.[2]>1&&p.bbox?.[3]>1).map(p=>({...p,bbox:[p.bbox[0]*sx,p.bbox[1]*sy,p.bbox[2]*sx,p.bbox[3]*sy]}));
+    if(!candidates.length)return null;
+    if(!lastBall)return candidates.sort((a,b)=>b.score-a.score)[0];
+    const lx=lastBall.x,ly=lastBall.y; const maxDim=Math.max($('active-video').videoWidth,$('active-video').videoHeight);
+    candidates.sort((a,b)=>{
+      const ac={x:a.bbox[0]+a.bbox[2]/2,y:a.bbox[1]+a.bbox[3]/2},bc={x:b.bbox[0]+b.bbox[2]/2,y:b.bbox[1]+b.bbox[3]/2};
+      const da=Math.hypot(ac.x-lx,ac.y-ly)/maxDim,db=Math.hypot(bc.x-lx,bc.y-ly)/maxDim;
+      return (da*1.6-a.score*.5)-(db*1.6-b.score*.5);
+    });
+    return candidates[0];
+  }
+  function updateTrack(p,now){
+    const v=$('active-video'); if(!v.videoWidth)return;
+    const [x,y,w,h]=p.bbox; const cx=x+w/2,cy=y+h/2;
+    if(!lastBall){lastBall={x:cx,y:cy,vx:0,vy:0,score:p.score,t:now};}
+    else{
+      const dt=Math.max(.03,(now-lastBall.t)/1000); const rawVx=(cx-lastBall.x)/dt,rawVy=(cy-lastBall.y)/dt;
+      const alpha=rawVx*lastBall.vx<0||rawVy*lastBall.vy<0?0.72:0.58;
+      lastBall={x:lastBall.x*(1-alpha)+cx*alpha,y:lastBall.y*(1-alpha)+cy*alpha,vx:lastBall.vx*.42+rawVx*.58,vy:lastBall.vy*.42+rawVy*.58,score:p.score,t:now};
+    }
+    lostSince=0;
+    const horizon=.18; const predX=clamp(lastBall.x+lastBall.vx*horizon,0,v.videoWidth),predY=clamp(lastBall.y+lastBall.vy*horizon,0,v.videoHeight);
+    predictedBall={x:predX,y:predY,score:p.score};candidateBall={x:cx,y:cy,score:p.score};
+  }
+  function setChip(id,text,cls=''){const el=$(id);el.textContent=text;el.className='chip '+cls}
+  function updateTelemetry(){
+    if(aiEnabled)setChip('chip-ai',`AI ON · ${detectionFps||0}d/s`,'good');else setChip('chip-ai','AI OFF');
+    const locked=!!lastBall&&Date.now()-lastBall.t<900;setChip('chip-track',locked?'LOCKED':'SEARCH',locked?'good':'warn');
+    setChip('chip-conf',lastBall?`CONF ${Math.round(lastBall.score*100)}%`:'CONF —',lastBall?.score>=.55?'good':'warn');
+    let dir='—'; if(predictedBall&&lastBall){if(Math.abs(lastBall.vx)>40)dir=lastBall.vx>0?'→':'←';else if(Math.abs(lastBall.vy)>40)dir=lastBall.vy>0?'↓':'↑';else dir='•'} setChip('chip-dir',`DIR ${dir}`);
+    setChip('chip-hw','PHONE STAND','good'); setChip('chip-net',navigator.onLine?'NET OK':'NET OFF',navigator.onLine?'good':'warn');
+  }
+  async function ensureBallModel(){
+    if(ballModel)return ballModel;
+    $('tracking-status').textContent='Loading lightweight ball detector…';
+    ballModel=await cocoSsd.load({base:'lite_mobilenet_v2'});
+    return ballModel;
+  }
+  async function detectionLoop(){
+    if(!aiEnabled)return;
+    const now=performance.now();
+    const v=$('active-video');
+    if(!detectBusy&&v.readyState>=2&&v.videoWidth&&now-lastDetectMs>=deviceProfile.detectInterval){
+      detectBusy=true;lastDetectMs=now;
+      try{
+        const ctx=analysisCanvas.getContext('2d',{alpha:false});
+        ctx.drawImage(v,0,0,v.videoWidth,v.videoHeight,0,0,analysisCanvas.width,analysisCanvas.height);
+        const predictions=await ballModel.detect(analysisCanvas,deviceProfile.maxPredictions,deviceProfile.score);
+        detectionCount++;
+        if(now-detectionFpsStamp>=1000){detectionFps=detectionCount;detectionCount=0;detectionFpsStamp=now}
+        const ball=pickBall(predictions);
+        if(ball){updateTrack(ball,now)}
+        else if(lastBall&&lostSince===0){lostSince=now;if(getMatch())getMatch().tracking.lost=(getMatch().tracking.lost||0)+1}
+        if(lastBall&&lostSince&&now-lostSince>1800){lastBall=null;predictedBall=null}
+      }catch(e){
+        setChip('chip-ai','AI ERR','warn'); $('tracking-status').textContent='AI is overloaded — reducing analysis rate';
+      }finally{detectBusy=false}
+    }
+    updateTelemetry();
+    if(aiEnabled)ballLoopTimer=setTimeout(detectionLoop,80);
+  }
+  function startTrackingLoop(){
+    clearTimeout(ballLoopTimer);ballLoopTimer=null;lastDetectMs=0;detectionCount=0;detectionFps=0;detectionFpsStamp=performance.now();detectionLoop();
+  }
+  function sourceCrop(v,canvas,centerX,centerY,z){
+    const sw=v.videoWidth,sh=v.videoHeight,target=canvas.width/canvas.height;
+    let cw=sw/z,ch=cw/target;if(ch>sh){ch=sh;cw=ch*target}
+    let sx=centerX-cw/2,sy=centerY-ch/2;sx=clamp(sx,0,sw-cw);sy=clamp(sy,0,sh-ch);
+    return {sx,sy,cw,ch};
+  }
+  function renderLoop(){
+    const v=$('active-video'),c=$('view-canvas');
+    if(v.readyState>=2&&v.videoWidth){
+      resizeCanvases(); const ctx=c.getContext('2d',{alpha:false});
+      let cx=v.videoWidth/2+manualOffset.x,cy=v.videoHeight/2+manualOffset.y,rz=1;
+      if(viewMode==='auto'&&autoFrame&&aiEnabled){
+        if(predictedBall){cx=predictedBall.x+manualOffset.x;cy=predictedBall.y+manualOffset.y;rz=zoom}
+        else if(lastBall&&Date.now()-lastBall.t<1600){cx=lastBall.x+manualOffset.x;cy=lastBall.y+manualOffset.y;rz=zoom}
+        else{rz=1.02;cx=v.videoWidth/2+manualOffset.x*.3;cy=v.videoHeight/2+manualOffset.y*.3}
+      }else{cx+=manualOffset.x;cy+=manualOffset.y}
+      const crop=sourceCrop(v,c,cx,cy,rz);ctx.drawImage(v,crop.sx,crop.sy,crop.cw,crop.ch,0,0,c.width,c.height);
+      drawBallOverlay(v,crop);
+    }
+    renderRaf=requestAnimationFrame(renderLoop);
+  }
+  function drawBallOverlay(v,crop){
+    const c=$('ball-canvas'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
+    if(!candidateBall)return;
+    const sx=(candidateBall.x-crop.sx)/crop.cw,sy=(candidateBall.y-crop.sy)/crop.ch;
+    const px=sx*c.width,py=sy*c.height;if(px<0||px>c.width||py<0||py>c.height)return;
+    ctx.strokeStyle='#F2B754';ctx.lineWidth=4;ctx.beginPath();ctx.arc(px,py,Math.max(13,c.width*.012),0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='rgba(0,0,0,.65)';ctx.font='700 11px system-ui';ctx.fillText(`${Math.round(candidateBall.score*100)}%`,px+10,py-10);
+  }
+  function toggleAI(force){
+    aiEnabled=typeof force==='boolean'?force:!aiEnabled;$('btn-ai-toggle').textContent=aiEnabled?'🔎 AI Tracking: On':'🔎 AI Tracking: Off';
+    if(!aiEnabled){clearTimeout(ballLoopTimer);ballLoopTimer=null;cancelAnimationFrame(ballLoopRaf);ballLoopRaf=null;$('tracking-status').textContent='AI off';setChip('chip-ai','AI OFF');return}
+    ensureBallModel().then(()=>{lastBall=null;predictedBall=null;candidateBall=null;lostSince=0;$('tracking-status').textContent=`AI tracking · ${MODEL_URL_NOTE} · ${deviceProfile.analysisW}×${deviceProfile.analysisH}`;startTrackingLoop()}).catch(()=>{aiEnabled=false;toggleAI(false);toast('AI detector could not load. Open Ti-Eye online once so the AI library/model can be cached.');});
+  }
+  function moveVirtual(dx,dy){ manualOffset.x+=dx*$('active-video').videoWidth*.08;manualOffset.y+=dy*$('active-video').videoHeight*.08;manualOffset.x=clamp(manualOffset.x,-$('active-video').videoWidth*.35,$('active-video').videoWidth*.35);manualOffset.y=clamp(manualOffset.y,-$('active-video').videoHeight*.35,$('active-video').videoHeight*.35); }
+  function recenter(){manualOffset={x:0,y:0}}
+  function renderActiveShell(m){
+    $('active-opp').textContent='vs '+(m.opponent||'—');$('active-half').textContent='HALF '+m.currentSegment;$('clock-display').textContent=fmtClock(currentSegmentElapsed(m));$('rec-dot').classList.add('live');$('rec-label').textContent='Recording';updateScore(m);renderSegmentControls(m);
+    cancelAnimationFrame(renderRaf);renderRaf=requestAnimationFrame(renderLoop);
+    if(!aiEnabled)toggleAI(true);
+    $('btn-follow-toggle').textContent=autoFrame?'🎥 Auto Frame: On':'🎥 Auto Frame: Off';
+  }
+  function updateScore(m){$('active-score').textContent=`${m.score.us} – ${m.score.opp}`}
+
+  async function prepareRecordingScreen(){
+    try{ await screen.orientation?.lock?.('landscape'); }catch{}
+    try{ await document.documentElement.requestFullscreen?.(); }catch{}
+  }
+  // ---------- Match workflow ----------
+  $('btn-begin-half1').addEventListener('click',async()=>{
+    const m=getMatch();if(!mediaStream){toast('Camera not ready');return}
+    viewMode=$('view-mode').value;zoom=Number($('zoom-range').value);autoFrame=viewMode==='auto';
+    $('active-video').srcObject=mediaStream;showScreen('active');await $('active-video').play().catch(()=>{});await prepareRecordingScreen();await requestWakeLock();
+    m.status='running';m.currentSegment=1;cancelAnimationFrame(renderRaf);renderRaf=requestAnimationFrame(renderLoop);await beginSegment(m);renderActiveShell(m);
+  });
+  function renderSegmentControls(m){
+    $('segment-controls').innerHTML=`<button class="seg-btn seg-end" id="btn-end-half">⏹ End Half ${m.currentSegment}</button>`;
+    $('btn-end-half').addEventListener('click',async()=>{
+      if(!confirm(`End Half ${m.currentSegment} and save the video?`))return;
+      document.querySelectorAll('#tag-grid .tag-btn').forEach(b=>b.disabled=true);$('rec-dot').classList.remove('live');$('rec-label').textContent='Saving…';
+      await endSegment(m);m.status='between';lastBall=null;predictedBall=null;renderBetweenControls(m);
+    });
+  }
+  function renderBetweenControls(m){
+    $('rec-label').textContent='Paused';$('segment-controls').innerHTML=`<button class="seg-btn seg-begin" id="btn-next-half">▶ Begin Half ${m.currentSegment+1}</button><button class="seg-btn seg-finish" id="btn-finish-match">🏁 End Match</button>`;
+    $('btn-next-half').addEventListener('click',async()=>{m.currentSegment++;m.status='running';document.querySelectorAll('#tag-grid .tag-btn').forEach(b=>b.disabled=false);await beginSegment(m);renderActiveShell(m)});
+    $('btn-finish-match').addEventListener('click',async()=>{if(!confirm('Finish the match?'))return;m.status='ended';m.segmentStartedAtMs=null;await saveMatches();await safeStopCamera();renderSummary(m);showScreen('summary');toast('Match saved')});
+  }
+  $('btn-active-back').addEventListener('click',async()=>{if(!confirm('Exit this match? The current half will be stopped.'))return;try{await document.exitFullscreen?.()}catch{};try{screen.orientation?.unlock?.()}catch{};const m=getMatch();if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{await endSegment(m)}catch{}}m.status='ended';await saveMatches();await safeStopCamera();renderSummary(m);showScreen('summary')});
+
+  // ---------- Tags ----------
+  document.querySelectorAll('#tag-grid .tag-btn[data-type]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const m=getMatch();if(!m||m.status!=='running')return;const type=btn.dataset.type,seconds=Math.floor(currentSegmentElapsed(m));m.tags.push({id:'t_'+Date.now(),segment:m.currentSegment,type,seconds,note:''});
+    if(type==='Goal')m.score.us++;if(type==='OppGoal')m.score.opp++;m.tracking.detections=(m.tracking.detections||0)+detectionCount;await saveMatches();updateScore(m);$('tracking-status').textContent=`${type==='OppGoal'?'Opponent goal':type} tagged · H${m.currentSegment} ${fmtClock(seconds)}`;if(navigator.vibrate)navigator.vibrate(18);setTimeout(()=>{$('tracking-status').textContent=aiEnabled?'AI tracking active':'AI off'},2000);
+  }));
+
+  // ---------- Tracking controls ----------
+  $('btn-control-sheet').addEventListener('click',()=>$('control-modal').classList.add('show'));
+  $('btn-close-sheet').addEventListener('click',()=>$('control-modal').classList.remove('show'));
+  $('control-modal').addEventListener('click',e=>{if(e.target===$('control-modal'))$('control-modal').classList.remove('show')});
+  $('btn-ai-toggle').addEventListener('click',()=>toggleAI());
+  $('btn-follow-toggle').addEventListener('click',()=>{autoFrame=!autoFrame;$('btn-follow-toggle').textContent=autoFrame?'🎥 Auto Frame: On':'🎥 Auto Frame: Off';});
+  $('btn-pan-left').addEventListener('click',()=>moveVirtual(-1,0));$('btn-pan-right').addEventListener('click',()=>moveVirtual(1,0));$('btn-tilt-up').addEventListener('click',()=>moveVirtual(0,-1));$('btn-tilt-down').addEventListener('click',()=>moveVirtual(0,1));$('btn-recenter').addEventListener('click',recenter);
+
+  // ---------- Summary ----------
+  function renderSummary(m){
+    $('summary-opp').textContent='vs '+(m.opponent||'—')+(m.venue?' · '+m.venue:'');$('summary-score').textContent=`${m.score?.us||0} – ${m.score?.opp||0}`;$('summary-meta').textContent=`${fmtDate(m.createdAt)} · ${(m.segments||[]).length} half${m.segments?.length===1?'':'s'} · ${(m.tags||[]).length} tagged moments · ${fmtClock(totalElapsed(m))}`;
+    const list=$('segment-list');list.innerHTML='';
+    if(!m.segments?.length){list.innerHTML='<div class="empty">No completed video segments.</div>'}else m.segments.forEach(seg=>{const card=document.createElement('div');card.className='segment-card';card.innerHTML=`<div><strong>Half ${seg.index}</strong><div class="segment-meta">${fmtClock(seg.seconds)} · ${seg.view==='auto'?'AI Follow':'Full Pitch'} · ${esc(seg.filename)}</div></div><button class="save-btn" data-seg="${seg.index}">Download</button>`;card.querySelector('button').addEventListener('click',()=>{const stored=segmentBlobs[m.id]?.[seg.index];if(stored)triggerDownload(stored.url,stored.filename);else toast('Video bytes are no longer in app memory; the original download is still on your device.')});list.appendChild(card)});
+    const tl=$('summary-timeline');tl.innerHTML='';$('summary-empty').style.display=m.tags?.length?'none':'block';(m.tags||[]).slice().sort((a,b)=>(a.segment-b.segment)||(a.seconds-b.seconds)).forEach(t=>{const row=document.createElement('div');row.className='tag-row';row.innerHTML=`<div class="tag-time">H${t.segment} ${fmtClock(t.seconds)}</div><div><div class="tag-type">${esc(t.type)}</div>${t.note?`<div class="tag-note">${esc(t.note)}</div>`:''}</div>`;tl.appendChild(row)});
+  }
+  $('btn-copy').addEventListener('click',async()=>{const m=getMatch();if(!m)return;const lines=[`Ti-Eye — vs ${m.opponent}${m.venue?' @ '+m.venue:''}`,`${fmtDate(m.createdAt)} · Final ${m.score.us} – ${m.score.opp}`,`Recording: ${(m.segments||[]).map(s=>`H${s.index} ${s.view==='auto'?'AI Follow':'Full Pitch'} ${fmtClock(s.seconds)}`).join(' | ')}`,'','EDIT LIST:',...(m.tags||[]).slice().sort((a,b)=>(a.segment-b.segment)||(a.seconds-b.seconds)).map(t=>`H${t.segment} ${fmtClock(t.seconds)}  ${t.type}`)];try{await navigator.clipboard.writeText(lines.join('\n'));toast('Edit list copied')}catch{toast('Copy failed — use the match summary manually')}});
+  $('btn-delete-match').addEventListener('click',async()=>{if(!confirm('Delete this match record?'))return;matches=matches.filter(m=>m.id!==currentMatchId);await saveMatches();currentMatchId=null;renderHome();showScreen('home');toast('Match deleted')});
+
+  window.addEventListener('beforeunload',()=>{try{safeStopCamera()}catch{}});
+  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+  configureDeviceProfile();
+  updateTelemetry();
+  window.addEventListener('online',updateTelemetry); window.addEventListener('offline',updateTelemetry);
+  loadMatches();
+})();
+</script>
+</body>
+</html>
